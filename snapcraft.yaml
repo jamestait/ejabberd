@@ -1,0 +1,83 @@
+name: ejabberd
+version: "17.04-snap1"
+summary: ejabberd XMPP server
+description: ejabberd is a Jabber/XMPP server written in Erlang
+confinement: strict
+grade: stable
+
+parts:
+  ejabberd:
+    plugin: autotools
+    source: .
+    source-tag: "17.04"
+    source-type: git
+    configflags:
+      - --enable-odbc
+      - --enable-mysql
+      - --enable-pgsql
+      - --enable-pam
+      - --enable-zlib
+      - --enable-riak
+      - --enable-redis
+      - --enable-elixir
+      - --enable-iconv
+      - --enable-debug
+      - --enable-tools
+    build-packages:
+      - build-essential
+      - erlang-dev
+      - erlang-eunit
+      - erlang-parsetools
+      - hevea
+      - libexpat1-dev
+      - libpam0g-dev
+      - libsqlite3-dev
+      - libssl-dev
+      - libyaml-dev
+      - po-debconf
+      - rebar
+      - texlive-latex-base
+      - texlive-latex-recommended
+      - texlive-latex-extra
+    stage-packages:
+      - erlang-asn1
+      - erlang-base
+      - erlang-crypto
+      - erlang-inets
+      - erlang-mnesia
+      - erlang-ssl
+      - erlang-syntax-tools
+      - erlang-xmerl
+    install: |
+      sed -ri 's|^ERLANG_NODE=.+$|ERLANG_NODE=ejabberd|g' $SNAPCRAFT_PART_INSTALL/sbin/ejabberdctl
+      sed -ri 's|^ERL=.+$|ERL=$SNAP/usr/bin/erl|g' $SNAPCRAFT_PART_INSTALL/sbin/ejabberdctl
+      sed -ri 's|^IEX=.+$|IEX=$SNAP/bin/iex|g' $SNAPCRAFT_PART_INSTALL/sbin/ejabberdctl
+      sed -ri 's|^EPMD=.+$|EPMD=$SNAP/usr/bin/epmd|g' $SNAPCRAFT_PART_INSTALL/sbin/ejabberdctl
+      sed -ri 's|^ERL_LIBS=.+$|ERL_LIBS=$SNAP/lib|g' $SNAPCRAFT_PART_INSTALL/sbin/ejabberdctl
+      sed -ri 's|^ROOTDIR=.+$|ROOTDIR=$SNAP/usr/lib/erlang|g' $SNAPCRAFT_PART_INSTALL/usr/lib/erlang/bin/erl
+  imagemagick:
+    plugin: nil
+    stage-packages:
+      - imagemagick
+    organize:
+        usr/bin/convert-im6: usr/bin/convert
+        usr/bin/identify-im6: usr/bin/identify
+  wrapper:
+    plugin: dump
+    source: .
+    organize:
+      ejabberdctl.wrapper: bin/ejabberdctl.wrapper
+
+apps:
+  ejabberd:
+    command: bin/ejabberdctl.wrapper start
+    stop-command: bin/ejabberdctl.wrapper stop
+    daemon: forking
+    plugs:
+      - network
+      - network-bind
+  ejabberdctl:
+    command: bin/ejabberdctl.wrapper
+    plugs:
+      - network
+      - network-bind

@@ -1,5 +1,5 @@
 name: ejabberd
-version: "17.04-snap1"
+version: "17.04-snap2"
 summary: ejabberd XMPP server
 description: ejabberd is a Jabber/XMPP server written in Erlang
 confinement: strict
@@ -78,6 +78,7 @@ apps:
       - network-bind
   ejabberdctl:
     command: bin/ejabberdctl.wrapper
+    aliases: [ejabberdctl]
     plugs:
       - network
       - network-bind

@@ -48,7 +48,6 @@ XmppAddr.hrl
 /mnesiadb
 /.rebar
 *.snap
-/ejabberdctl.wrapper
 /parts/
 /prime/
 /stage/

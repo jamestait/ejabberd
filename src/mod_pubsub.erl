@@ -89,7 +89,7 @@
 %% API and gen_server callbacks
 -export([start/2, stop/1, init/1,
     handle_call/3, handle_cast/2, handle_info/2,
-    terminate/2, code_change/3, depends/2]).
+    terminate/2, code_change/3, depends/2, export/1]).
 
 -export([send_loop/1, mod_opt_type/1]).
 
@@ -546,13 +546,11 @@ disco_identity(Host, Node, From) ->
 		case get_allowed_items_call(Host, Nidx, From, Type,
 					    Options, Owners) of
 		    {result, _} ->
-			{result, [#identity{category = <<"pubsub">>,
-					    type = <<"pep">>},
-				  #identity{category = <<"pubsub">>,
-					    type = <<"leaf">>,
+			{result, [#identity{category = <<"pubsub">>, type = <<"pep">>},
+				  #identity{category = <<"pubsub">>, type = <<"leaf">>,
 					    name = case get_option(Options, title) of
 						       false -> <<>>;
-						       [Title] -> Title
+						       Title -> Title
 						   end}]};
 		    _ ->
 			{result, []}
@@ -586,8 +584,7 @@ disco_features(Host, Node, From) ->
 					    Type, Options, Owners) of
 		    {result, _} ->
 			{result,
-			 [?NS_PUBSUB |
-			  [feature(F) || F <- plugin_features(Host, <<"pep">>)]]};
+			 [?NS_PUBSUB | [feature(F) || F <- plugin_features(Host, <<"pep">>)]]};
 		    _ ->
 			{result, []}
 		end
@@ -620,7 +617,7 @@ disco_items(Host, <<>>, From) ->
 				     jid = jid:make(Host),
 				     name = case get_option(Options, title) of
 						false -> <<>>;
-						[Title] -> Title
+						Title -> Title
 					    end} | Acc];
 		    _ ->
 			Acc
@@ -679,16 +676,14 @@ caps_update(#jid{luser = U, lserver = S, lresource = R}, #jid{lserver = Host} = 
     presence(Host, {presence, U, S, [R], JID}).
 
 -spec presence_probe(jid(), jid(), pid()) -> ok.
-presence_probe(#jid{luser = U, lserver = S, lresource = R} = JID, JID, Pid) ->
-    presence(S, {presence, JID, Pid}),
-    presence(S, {presence, U, S, [R], JID});
 presence_probe(#jid{luser = U, lserver = S}, #jid{luser = U, lserver = S}, _Pid) ->
     %% ignore presence_probe from my other ressources
     %% to not get duplicated last items
     ok;
-presence_probe(#jid{luser = U, lserver = S, lresource = R}, #jid{lserver = S} = JID, _Pid) ->
-    presence(S, {presence, U, S, [R], JID});
-presence_probe(_Host, _JID, _Pid) ->
+presence_probe(#jid{lserver = S} = From, #jid{lserver = S} = To, Pid) ->
+    presence(S, {presence, From, Pid}),
+    presence(S, {presence, From#jid.luser, S, [From#jid.lresource], To});
+presence_probe(_From, _To, _Pid) ->
     %% ignore presence_probe from remote contacts,
     %% those are handled via caps_add
     ok.
@@ -1723,7 +1718,7 @@ delete_node(Host, Node, Owner) ->
 %%<li>The node does not support subscriptions.</li>
 %%<li>The node does not exist.</li>
 %%</ul>
--spec subscribe_node(host(), binary(), jid(), binary(), [{binary(), [binary()]}]) ->
+-spec subscribe_node(host(), binary(), jid(), jid(), [{binary(), [binary()]}]) ->
 			    {result, pubsub()} | {error, stanza_error()}.
 subscribe_node(Host, Node, From, JID, Configuration) ->
     SubModule = subscription_plugin(Host),
@@ -2152,9 +2147,14 @@ get_allowed_items_call(Host, Nidx, From, Type, Options, Owners, RSM) ->
     node_call(Host, Type, get_items, [Nidx, From, AccessModel, PS, RG, undefined, RSM]).
 
 get_last_items(Host, Type, Nidx, LJID, Count) ->
-    case node_action(Host, Type, get_last_items, [Nidx, LJID, Count]) of
-	{result, Items} -> Items;
-	_ -> []
+    case get_cached_item(Host, Nidx) of
+	undefined ->
+	    case node_action(Host, Type, get_last_items, [Nidx, LJID, Count]) of
+		{result, Items} -> Items;
+	      _ -> []
+	    end;
+	LastItem ->
+	    [LastItem]
     end.
 
 %% @doc <p>Resend the items of a node to the user.</p>
@@ -3870,6 +3870,9 @@ purge_offline(Host, LJID, Node) ->
 	Error ->
 	    Error
     end.
+
+export(Server) ->
+    pubsub_db_sql:export(Server).
 
 mod_opt_type(access_createnode) -> fun acl:access_rules_validator/1;
 mod_opt_type(db_type) -> fun(T) -> ejabberd_config:v_db(?MODULE, T) end;

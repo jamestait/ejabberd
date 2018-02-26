@@ -1,5 +1,5 @@
 name: ejabberd
-version: "git"
+version: "18.01-snap1"
 summary: ejabberd XMPP server
 description: ejabberd is a Jabber/XMPP server written in Erlang
 confinement: strict
@@ -9,7 +9,7 @@ parts:
   ejabberd:
     plugin: autotools
     source: .
-    source-branch: "snap-packaging"
+    source-tag: "18.01-snap1"
     source-type: git
     configflags:
       - --enable-odbc

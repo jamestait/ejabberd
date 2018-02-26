@@ -32,9 +32,11 @@ parts:
       - erlang-parsetools
       - hevea
       - libexpat1-dev
+      - libgd-dev
       - libpam0g-dev
       - libsqlite3-dev
       - libssl-dev
+      - libwebp-dev
       - libyaml-dev
       - po-debconf
       - rebar
@@ -80,7 +82,6 @@ apps:
       - network-bind
   ejabberdctl:
     command: bin/ejabberdctl.wrapper
-    aliases: [ejabberdctl]
     plugs:
       - network
       - network-bind

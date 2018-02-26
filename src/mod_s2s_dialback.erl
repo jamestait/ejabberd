@@ -2,7 +2,7 @@
 %%% Created : 16 Dec 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -139,14 +139,13 @@ s2s_out_auth_result(#{db_verify := _} = State, _) ->
     %% in section 2.1.2, step 2
     {stop, send_verify_request(State)};
 s2s_out_auth_result(#{db_enabled := true,
-		      sockmod := SockMod,
 		      socket := Socket, ip := IP,
 		      server := LServer,
 		      remote_server := RServer} = State, {false, _}) ->
     %% SASL authentication has failed, retrying with dialback
     %% Sending dialback request, section 2.1.1, step 1
     ?INFO_MSG("(~s) Retrying with s2s dialback authentication: ~s -> ~s (~s)",
-	      [SockMod:pp(Socket), LServer, RServer,
+	      [xmpp_socket:pp(Socket), LServer, RServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP))]),
     State1 = maps:remove(stop_reason, State#{on_route => queue}),
     {stop, send_db_request(State1)};
@@ -159,7 +158,6 @@ s2s_out_downgraded(#{db_verify := _} = State, _) ->
     %% section 2.1.2, step 2
     {stop, send_verify_request(State)};
 s2s_out_downgraded(#{db_enabled := true,
-		     sockmod := SockMod,
 		     socket := Socket, ip := IP,
 		     server := LServer,
 		     remote_server := RServer} = State, _) ->
@@ -167,7 +165,7 @@ s2s_out_downgraded(#{db_enabled := true,
     %% section 2.1.1, step 1
     ?INFO_MSG("(~s) Trying s2s dialback authentication with "
 	      "non-RFC compliant server: ~s -> ~s (~s)",
-	      [SockMod:pp(Socket), LServer, RServer,
+	      [xmpp_socket:pp(Socket), LServer, RServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP))]),
     {stop, send_db_request(State)};
 s2s_out_downgraded(State, _) ->
@@ -320,7 +318,7 @@ check_from_to(From, To) ->
 
 -spec mk_error(term()) -> stanza_error().
 mk_error(forbidden) ->
-    xmpp:err_forbidden(<<"Denied by ACL">>, ?MYLANG);
+    xmpp:err_forbidden(<<"Access denied by service policy">>, ?MYLANG);
 mk_error(host_unknown) ->
     xmpp:err_not_allowed(<<"Host unknown">>, ?MYLANG);
 mk_error({codec_error, Why}) ->
@@ -334,9 +332,8 @@ mk_error(_) ->
 -spec format_error(db_result()) -> binary().
 format_error(#db_result{type = invalid}) ->
     <<"invalid dialback key">>;
-format_error(#db_result{type = error, sub_els = Els}) ->
-    %% TODO: improve xmpp.erl
-    case xmpp:get_error(#message{sub_els = Els}) of
+format_error(#db_result{type = error} = Result) ->
+    case xmpp:get_error(Result) of
 	#stanza_error{} = Err ->
 	    format_stanza_error(Err);
 	undefined ->
@@ -353,9 +350,9 @@ format_stanza_error(#stanza_error{reason = Reason, text = Txt}) ->
 		 #redirect{} -> <<"redirect">>;
 		 _ -> erlang:atom_to_binary(Reason, latin1)
 	     end,
-    case Txt of
-	undefined -> Slogan;
-	#text{data = <<"">>} -> Slogan;
-	#text{data = Data} ->
+    case xmpp:get_text(Txt) of
+	<<"">> ->
+	    Slogan;
+	Data ->
 	    <<Data/binary, " (", Slogan/binary, ")">>
     end.

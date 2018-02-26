@@ -4,7 +4,7 @@
 %%% Purpose : XEP-0356: Privileged Entity
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -210,7 +210,7 @@ handle_cast({component_connected, Host}, State) ->
     RosterPerm = get_roster_permission(ServerHost, Host),
     PresencePerm = get_presence_permission(ServerHost, Host),
     MessagePerm = get_message_permission(ServerHost, Host),
-    if RosterPerm /= none, PresencePerm /= none, MessagePerm /= none ->
+    if RosterPerm /= none; PresencePerm /= none; MessagePerm /= none ->
 	    Priv = #privilege{perms = [#privilege_perm{access = message,
 						       type = MessagePerm},
 				       #privilege_perm{access = roster,
@@ -274,7 +274,7 @@ get_permissions(ServerHost) ->
 forward_message(#message{to = To} = Msg) ->
     ServerHost = To#jid.lserver,
     Lang = xmpp:get_lang(Msg),
-    case xmpp:get_subtag(Msg, #privilege{}) of
+    try xmpp:try_subtag(Msg, #privilege{}) of
 	#privilege{forwarded = #forwarded{xml_els = [SubEl]}} ->
 	    try xmpp:decode(SubEl, ?NS_CLIENT, [ignore_els]) of
 		#message{} = NewMsg ->
@@ -292,12 +292,16 @@ forward_message(#message{to = To} = Msg) ->
 		    Err = xmpp:err_bad_request(Txt, Lang),
 		    ejabberd_router:route_error(Msg, Err)
 	    catch _:{xmpp_codec, Why} ->
-		    Txt = xmpp:format_error(Why),
+		    Txt = xmpp:io_format_error(Why),
 		    Err = xmpp:err_bad_request(Txt, Lang),
 		    ejabberd_router:route_error(Msg, Err)
 	    end;
 	_ ->
-	    Txt = <<"Invalid <forwarded/> element">>,
+	    Txt = <<"No <forwarded/> element found">>,
+	    Err = xmpp:err_bad_request(Txt, Lang),
+	    ejabberd_router:route_error(Msg, Err)
+    catch _:{xmpp_codec, Why} ->
+	    Txt = xmpp:io_format_error(Why),
 	    Err = xmpp:err_bad_request(Txt, Lang),
 	    ejabberd_router:route_error(Msg, Err)
     end.

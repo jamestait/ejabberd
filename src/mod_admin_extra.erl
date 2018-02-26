@@ -5,7 +5,7 @@
 %%% Created : 10 Aug 2008 by Badlop <badlop@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -44,7 +44,7 @@
 	 kick_session/4, status_num/2, status_num/1,
 	 status_list/2, status_list/1, connected_users_info/0,
 	 connected_users_vhost/1, set_presence/7,
-	 get_presence/2, user_sessions_info/2, get_last/2,
+	 get_presence/2, user_sessions_info/2, get_last/2, set_last/4,
 
 	 % Accounts
 	 set_password/3, check_password_hash/4, delete_old_users/1,
@@ -93,8 +93,13 @@
 start(_Host, _Opts) ->
     ejabberd_commands:register_commands(get_commands_spec()).
 
-stop(_Host) ->
-    ejabberd_commands:unregister_commands(get_commands_spec()).
+stop(Host) ->
+    case gen_mod:is_loaded_elsewhere(Host, ?MODULE) of
+	false ->
+	    ejabberd_commands:unregister_commands(get_commands_spec());
+	true ->
+	    ok
+    end.
 
 reload(_Host, _NewOpts, _OldOpts) ->
     ok.
@@ -602,9 +607,9 @@ get_commands_spec() ->
 					  ]}}},
      #ejabberd_commands{name = set_last, tags = [last],
 			desc = "Set last activity information",
-			longdesc = "Timestamp is the seconds since"
+			longdesc = "Timestamp is the seconds since "
 			"1970-01-01 00:00:00 UTC, for example: date +%s",
-			module = mod_last, function = store_last_info,
+			module = ?MODULE, function = set_last,
 			args = [{user, binary}, {host, binary}, {timestamp, integer}, {status, binary}],
 			args_example = [<<"user1">>,<<"myserver.com">>, 1500045311, <<"GoSleeping">>],
 			args_desc = ["User name", "Server name", "Number of seconds since epoch", "Status message"],
@@ -1437,6 +1442,12 @@ get_last(User, Server) ->
     end,
     {xmpp_util:encode_timestamp(Now), Status}.
 
+set_last(User, Server, Timestamp, Status) ->
+    case mod_last:store_last_info(User, Server, Timestamp, Status) of
+        {ok, _} -> ok;
+	Error -> Error
+    end.
+
 %%%
 %%% Private Storage
 %%%
@@ -1530,6 +1541,7 @@ send_message(Type, From, To, Subject, Body) ->
 build_packet(Type, Subject, Body) ->
     #message{type = misc:binary_to_atom(Type),
 	     body = xmpp:mk_text(Body),
+	     id = randoms:get_string(),
 	     subject = xmpp:mk_text(Subject)}.
 
 send_stanza(FromString, ToString, Stanza) ->
@@ -1563,14 +1575,13 @@ send_stanza_c2s(Username, Host, Resource, Stanza) ->
     end.
 
 privacy_set(Username, Host, QueryS) ->
-    From = jid:make(Username, Host),
-    To = jid:make(Host),
+    Jid = jid:make(Username, Host),
     QueryEl = fxml_stream:parse_element(QueryS),
     SubEl = xmpp:decode(QueryEl),
     IQ = #iq{type = set, id = <<"push">>, sub_els = [SubEl],
-	     from = From, to = To},
-    mod_privacy:process_iq(IQ),
-    ok.
+	     from = Jid, to = Jid},
+    Result = mod_privacy:process_iq(IQ),
+    Result#iq.type == result.
 
 %%%
 %%% Stats

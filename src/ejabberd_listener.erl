@@ -5,7 +5,7 @@
 %%% Created : 16 Nov 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -294,7 +294,7 @@ accept(ListenSocket, Module, Opts, Interval) ->
 	{ok, Socket} ->
 	    case {inet:sockname(Socket), inet:peername(Socket)} of
 		{{ok, {Addr, Port}}, {ok, {PAddr, PPort}}} ->
-		    Receiver = case ejabberd_socket:start(Module,
+		    Receiver = case xmpp_socket:start(Module,
 							  gen_tcp, Socket, Opts) of
 				   {ok, RecvPid} -> RecvPid;
 				   _ -> none
@@ -606,6 +606,11 @@ validate_module_option(Module, Opt, Val) ->
 			       [Opt, Val]),
 		    error
 	    end;
+	[] ->
+	    ?ERROR_MSG("unknown listen option '~s' for '~s' will be likely "
+		       "ignored because the listening module doesn't have "
+		       "any options", [Opt, Module]),
+	    {ok, Val};
 	KnownOpts when is_list(KnownOpts) ->
 	    ?ERROR_MSG("unknown listen option '~s' for '~s' will be likely "
 		       "ignored, available options are: ~s",

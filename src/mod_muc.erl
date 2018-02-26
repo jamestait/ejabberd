@@ -5,7 +5,7 @@
 %%% Created : 19 Mar 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -39,6 +39,7 @@
 	 reload/3,
 	 room_destroyed/4,
 	 store_room/4,
+	 store_room/5,
 	 restore_room/3,
 	 forget_room/3,
 	 create_room/5,
@@ -61,6 +62,7 @@
 	 count_online_rooms/1,
 	 register_online_user/4,
 	 unregister_online_user/4,
+	 iq_set_register_info/5,
 	 count_online_rooms_by_user/3,
 	 get_online_rooms_by_user/3,
 	 can_use_nick/4]).
@@ -73,6 +75,7 @@
 -include("logger.hrl").
 -include("xmpp.hrl").
 -include("mod_muc.hrl").
+-include("translate.hrl").
 
 -record(state,
 	{hosts = [] :: [binary()],
@@ -87,7 +90,7 @@
 -type muc_room_opts() :: [{atom(), any()}].
 -callback init(binary(), gen_mod:opts()) -> any().
 -callback import(binary(), binary(), [binary()]) -> ok.
--callback store_room(binary(), binary(), binary(), list()) -> {atomic, any()}.
+-callback store_room(binary(), binary(), binary(), list(), list()|undefined) -> {atomic, any()}.
 -callback restore_room(binary(), binary(), binary()) -> muc_room_opts() | error.
 -callback forget_room(binary(), binary(), binary()) -> {atomic, any()}.
 -callback can_use_nick(binary(), binary(), jid(), binary()) -> boolean().
@@ -104,6 +107,8 @@
 -callback unregister_online_user(binary(), ljid(), binary(), binary()) -> any().
 -callback count_online_rooms_by_user(binary(), binary(), binary()) -> non_neg_integer().
 -callback get_online_rooms_by_user(binary(), binary(), binary()) -> [{binary(), binary()}].
+-callback get_subscribed_rooms(binary(), binary(), jid()) ->
+    {ok, [{ljid(), binary(), [binary()]}]} | {error, any()}.
 
 %%====================================================================
 %% API
@@ -156,9 +161,12 @@ create_room(Host, Name, From, Nick, Opts) ->
     gen_server:call(Proc, {create, Name, Host, From, Nick, Opts}).
 
 store_room(ServerHost, Host, Name, Opts) ->
+    store_room(ServerHost, Host, Name, Opts, undefined).
+
+store_room(ServerHost, Host, Name, Opts, ChangesHints) ->
     LServer = jid:nameprep(ServerHost),
     Mod = gen_mod:db_mod(LServer, ?MODULE),
-    Mod:store_room(LServer, Host, Name, Opts).
+    Mod:store_room(LServer, Host, Name, Opts, ChangesHints).
 
 restore_room(ServerHost, Host, Name) ->
     LServer = jid:nameprep(ServerHost),
@@ -509,7 +517,7 @@ process_disco_info(#iq{type = get, to = To, lang = Lang,
     X = ejabberd_hooks:run_fold(disco_info, ServerHost, [],
 				[ServerHost, ?MODULE, <<"">>, Lang]),
     MAMFeatures = case gen_mod:is_loaded(ServerHost, mod_mam) of
-		      true -> [?NS_MAM_TMP, ?NS_MAM_0, ?NS_MAM_1];
+		      true -> [?NS_MAM_TMP, ?NS_MAM_0, ?NS_MAM_1, ?NS_MAM_2];
 		      false -> []
 		  end,
     RSMFeatures = case RMod:rsm_supported() of
@@ -519,9 +527,10 @@ process_disco_info(#iq{type = get, to = To, lang = Lang,
     Features = [?NS_DISCO_INFO, ?NS_DISCO_ITEMS,
 		?NS_REGISTER, ?NS_MUC, ?NS_VCARD, ?NS_MUCSUB, ?NS_MUC_UNIQUE
 		| RSMFeatures ++ MAMFeatures],
+    Name = gen_mod:get_module_opt(ServerHost, ?MODULE, name, ?T("Chatrooms")),
     Identity = #identity{category = <<"conference">>,
 			 type = <<"text">>,
-			 name = translate:translate(Lang, <<"Chatrooms">>)},
+			 name = translate:translate(Lang, Name)},
     xmpp:make_iq_result(
       IQ, #disco_info{features = Features,
 		      identities = [Identity],
@@ -680,7 +689,7 @@ iq_disco_items(_ServerHost, _Host, _From, Lang, _MaxRoomsDiscoItems, _Node, _RSM
 
 -spec get_room_disco_item({binary(), binary(), pid()},
 			  term()) -> {ok, disco_item()} |
-							   {error, timeout | notfound}.
+				     {error, timeout | notfound}.
 get_room_disco_item({Name, Host, Pid}, Query) ->
 	    RoomJID = jid:make(Name, Host),
 	    try p1_fsm:sync_send_all_state_event(Pid, Query, 100) of
@@ -688,24 +697,31 @@ get_room_disco_item({Name, Host, Pid}, Query) ->
 		    {ok, #disco_item{jid = RoomJID, name = Desc}};
 		false ->
 		    {error, notfound}
-	    catch _:{timeout, _} ->
+	    catch _:{timeout, {p1_fsm, _, _}} ->
 		    {error, timeout};
-		  _:{noproc, _} ->
+		  _:{_, {p1_fsm, _, _}} ->
 		    {error, notfound}
     end.
 
 get_subscribed_rooms(ServerHost, Host, From) ->
-    Rooms = get_online_rooms(ServerHost, Host),
+    LServer = jid:nameprep(ServerHost),
+    Mod = gen_mod:db_mod(LServer, ?MODULE),
     BareFrom = jid:remove_resource(From),
-    lists:flatmap(
-      fun({Name, _, Pid}) ->
-	      case p1_fsm:sync_send_all_state_event(Pid, {is_subscribed, BareFrom}) of
-		  true -> [jid:make(Name, Host)];
-		  false -> []
-	      end;
-	 (_) ->
-	      []
-      end, Rooms).
+    case Mod:get_subscribed_rooms(LServer, Host, BareFrom) of
+	not_implemented ->
+	    Rooms = get_online_rooms(ServerHost, Host),
+	    lists:flatmap(
+	      fun({Name, _, Pid}) ->
+		      case p1_fsm:sync_send_all_state_event(Pid, {is_subscribed, BareFrom}) of
+			  true -> [jid:make(Name, Host)];
+			  false -> []
+		      end;
+		 (_) ->
+		      []
+	      end, Rooms);
+	V ->
+	    V
+    end.
 
 get_nick(ServerHost, Host, From) ->
     LServer = jid:nameprep(ServerHost),
@@ -808,7 +824,7 @@ opts_to_binary(Opts) ->
               {description, iolist_to_binary(Desc)};
          ({password, Pass}) ->
               {password, iolist_to_binary(Pass)};
-         ({subject, Subj}) ->
+         ({subject, [C|_] = Subj}) when is_integer(C), C >= 0, C =< 255 ->
               {subject, iolist_to_binary(Subj)};
          ({subject_author, Author}) ->
               {subject_author, iolist_to_binary(Author)};
@@ -866,6 +882,7 @@ mod_opt_type(ram_db_type) -> fun(T) -> ejabberd_config:v_db(?MODULE, T) end;
 mod_opt_type(history_size) ->
     fun (I) when is_integer(I), I >= 0 -> I end;
 mod_opt_type(host) -> fun iolist_to_binary/1;
+mod_opt_type(name) -> fun iolist_to_binary/1;
 mod_opt_type(hosts) ->
     fun (L) -> lists:map(fun iolist_to_binary/1, L) end;
 mod_opt_type(max_room_desc) ->
@@ -961,7 +978,7 @@ mod_opt_type({default_room_options, presence_broadcast}) ->
     end;
 mod_opt_type(_) ->
     [access, access_admin, access_create, access_persistent,
-     db_type, ram_db_type, history_size, host, hosts,
+     db_type, ram_db_type, history_size, host, hosts, name,
      max_room_desc, max_room_id, max_room_name,
      max_rooms_discoitems, max_user_conferences, max_users,
      max_users_admin_threshold, max_users_presence,

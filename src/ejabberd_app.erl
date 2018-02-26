@@ -5,7 +5,7 @@
 %%% Created : 31 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -50,6 +50,7 @@ start(normal, _Args) ->
     ejabberd_mnesia:start(),
     file_queue_init(),
     maybe_add_nameservers(),
+    ejabberd_system_monitor:start(),
     case ejabberd_sup:start_link() of
 	{ok, SupPid} ->
 	    register_elixir_config_hooks(),
@@ -60,7 +61,9 @@ start(normal, _Args) ->
 	    lists:foreach(fun erlang:garbage_collect/1, processes()),
 	    {ok, SupPid};
 	Err ->
-	    Err
+	    ?CRITICAL_MSG("Failed to start ejabberd application: ~p", [Err]),
+	    timer:sleep(1000),
+	    halt("Refer to ejabberd log files to diagnose the problem")
     end;
 start(_, _) ->
     {error, badarg}.
@@ -146,7 +149,8 @@ start_apps() ->
     ejabberd:start_app(fast_yaml),
     ejabberd:start_app(fast_tls),
     ejabberd:start_app(xmpp),
-    ejabberd:start_app(cache_tab).
+    ejabberd:start_app(cache_tab),
+    start_eimp().
 
 setup_if_elixir_conf_used() ->
   case ejabberd_config:is_using_elixir_config() of
@@ -170,3 +174,11 @@ start_elixir_application() ->
 	_ ->
 	    ok
     end.
+
+-ifdef(GRAPHICS).
+start_eimp() ->
+    ejabberd:start_app(eimp).
+-else.
+start_eimp() ->
+    ok.
+-endif.

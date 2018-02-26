@@ -4,7 +4,7 @@
 %%% Created :  2 Mar 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -310,11 +310,8 @@ is_item_not_found({error, #stanza_error{reason = 'item-not-found'}}) -> true;
 is_item_not_found({error, _}) -> false.
 
 -spec is_not_subscribed({error, stanza_error()}) -> boolean().
-is_not_subscribed({error, #stanza_error{sub_els = Els}}) ->
-    %% TODO: make xmpp:get_els function working for any XMPP element
-    %% with sub_els field
-    xmpp:has_subtag(#message{sub_els = Els},
-		    #ps_error{type = 'not-subscribed'}).
+is_not_subscribed({error, StanzaError}) ->
+    xmpp:has_subtag(StanzaError, #ps_error{type = 'not-subscribed'}).
 
 depends(_Host, _Opts) ->
     [{mod_pubsub, hard}].

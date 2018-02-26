@@ -5,7 +5,7 @@
 %%% Created : 14 Dec 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -978,7 +978,19 @@ default_db(Opt, Host, Module) ->
 get_modules() ->
     {ok, Mods} = application:get_key(ejabberd, modules),
     ExtMods = [Name || {Name, _Details} <- ext_mod:installed()],
-    ExtMods ++ Mods.
+    case application:get_env(ejabberd, external_beams) of
+	{ok, Path} ->
+	    case lists:member(Path, code:get_path()) of
+		true -> ok;
+		false -> code:add_patha(Path)
+	    end,
+	    Beams = filelib:wildcard(filename:join(Path, "*\.beam")),
+	    CustMods = [list_to_atom(filename:rootname(filename:basename(Beam)))
+			|| Beam <- Beams],
+	    CustMods ++ ExtMods ++ Mods;
+	_ ->
+	    ExtMods ++ Mods
+    end.
 
 get_modules_with_options(Modules) ->
     lists:foldl(
@@ -1379,7 +1391,6 @@ now_to_seconds({MegaSecs, Secs, _MicroSecs}) ->
 	      (cache_size) -> fun((timeout()) -> timeout());
 	      (cache_missed) -> fun((boolean()) -> boolean());
 	      (cache_life_time) -> fun((timeout()) -> timeout());
-	      (domain_certfile) -> fun((binary()) -> binary());
 	      (shared_key) -> fun((binary()) -> binary());
 	      (node_start) -> fun((non_neg_integer()) -> non_neg_integer());
 	      (atom()) -> [atom()].
@@ -1417,8 +1428,6 @@ opt_type(cache_life_time) ->
        (infinity) -> infinity;
        (unlimited) -> infinity
     end;
-opt_type(domain_certfile) ->
-    fun misc:try_read_file/1;
 opt_type(shared_key) ->
     fun iolist_to_binary/1;
 opt_type(node_start) ->
@@ -1427,7 +1436,7 @@ opt_type(_) ->
     [hide_sensitive_log_data, hosts, language, max_fsm_queue,
      default_db, default_ram_db, queue_type, queue_dir, loglevel,
      use_cache, cache_size, cache_missed, cache_life_time,
-     domain_certfile, shared_key, node_start].
+     shared_key, node_start].
 
 -spec may_hide_data(any()) -> any().
 may_hide_data(Data) ->

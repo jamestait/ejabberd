@@ -4,7 +4,7 @@
 %%% Created : 13 Apr 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -36,6 +36,7 @@
 -include("xmpp.hrl").
 -include("mod_vcard.hrl").
 -include("logger.hrl").
+-include("translate.hrl").
 
 %%%===================================================================
 %%% API
@@ -95,32 +96,32 @@ search(LServer, Data, AllowReturnAll, MaxMatch) ->
     end.
 
 search_fields(_LServer) ->
-    [{<<"User">>, <<"user">>},
-     {<<"Full Name">>, <<"fn">>},
-     {<<"Name">>, <<"first">>},
-     {<<"Middle Name">>, <<"middle">>},
-     {<<"Family Name">>, <<"last">>},
-     {<<"Nickname">>, <<"nick">>},
-     {<<"Birthday">>, <<"bday">>},
-     {<<"Country">>, <<"ctry">>},
-     {<<"City">>, <<"locality">>},
-     {<<"Email">>, <<"email">>},
-     {<<"Organization Name">>, <<"orgname">>},
-     {<<"Organization Unit">>, <<"orgunit">>}].
+    [{?T("User"), <<"user">>},
+     {?T("Full Name"), <<"fn">>},
+     {?T("Name"), <<"first">>},
+     {?T("Middle Name"), <<"middle">>},
+     {?T("Family Name"), <<"last">>},
+     {?T("Nickname"), <<"nick">>},
+     {?T("Birthday"), <<"bday">>},
+     {?T("Country"), <<"ctry">>},
+     {?T("City"), <<"locality">>},
+     {?T("Email"), <<"email">>},
+     {?T("Organization Name"), <<"orgname">>},
+     {?T("Organization Unit"), <<"orgunit">>}].
 
 search_reported(_LServer) ->
-    [{<<"Jabber ID">>, <<"jid">>},
-     {<<"Full Name">>, <<"fn">>},
-     {<<"Name">>, <<"first">>},
-     {<<"Middle Name">>, <<"middle">>},
-     {<<"Family Name">>, <<"last">>},
-     {<<"Nickname">>, <<"nick">>},
-     {<<"Birthday">>, <<"bday">>},
-     {<<"Country">>, <<"ctry">>},
-     {<<"City">>, <<"locality">>},
-     {<<"Email">>, <<"email">>},
-     {<<"Organization Name">>, <<"orgname">>},
-     {<<"Organization Unit">>, <<"orgunit">>}].
+    [{?T("Jabber ID"), <<"jid">>},
+     {?T("Full Name"), <<"fn">>},
+     {?T("Name"), <<"first">>},
+     {?T("Middle Name"), <<"middle">>},
+     {?T("Family Name"), <<"last">>},
+     {?T("Nickname"), <<"nick">>},
+     {?T("Birthday"), <<"bday">>},
+     {?T("Country"), <<"ctry">>},
+     {?T("City"), <<"locality">>},
+     {?T("Email"), <<"email">>},
+     {?T("Organization Name"), <<"orgname">>},
+     {?T("Organization Unit"), <<"orgunit">>}].
 
 remove_user(LUser, LServer) ->
     US = {LUser, LServer},

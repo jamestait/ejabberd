@@ -2,7 +2,7 @@
 %%% Created : 11 Dec 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -21,11 +21,11 @@
 %%%-------------------------------------------------------------------
 -module(ejabberd_service).
 -behaviour(xmpp_stream_in).
--behaviour(ejabberd_socket).
+-behaviour(xmpp_socket).
 
 -protocol({xep, 114, '1.6'}).
 
-%% ejabberd_socket callbacks
+%% xmpp_socket callbacks
 -export([start/2, start_link/2, socket_type/0, close/1, close/2]).
 %% ejabberd_listener callbacks
 -export([listen_opt_type/1, transform_listen_option/2]).
@@ -100,8 +100,8 @@ init([State, Opts]) ->
 		  false -> [compression_none | TLSOpts1];
 		  true -> TLSOpts1
 	      end,
-    xmpp_stream_in:change_shaper(State, Shaper),
-    State1 = State#{access => Access,
+    State1 = xmpp_stream_in:change_shaper(State, Shaper),
+    State2 = State1#{access => Access,
 		    xmlns => ?NS_COMPONENT,
 		    lang => ?MYLANG,
 		    server => ?MYNAME,
@@ -109,7 +109,7 @@ init([State, Opts]) ->
 		    stream_version => undefined,
 		    tls_options => TLSOpts,
 		    check_from => CheckFrom},
-    ejabberd_hooks:run_fold(component_init, {ok, State1}, [Opts]).
+    ejabberd_hooks:run_fold(component_init, {ok, State2}, [Opts]).
 
 handle_stream_start(_StreamStart,
 		    #{remote_server := RemoteServer,
@@ -135,8 +135,7 @@ handle_stream_start(_StreamStart,
     end.
 
 get_password_fun(#{remote_server := RemoteServer,
-		   socket := Socket, sockmod := SockMod,
-		   ip := IP,
+		   socket := Socket, ip := IP,
 		   host_opts := HostOpts}) ->
     fun(_) ->
 	    case dict:find(RemoteServer, HostOpts) of
@@ -145,7 +144,7 @@ get_password_fun(#{remote_server := RemoteServer,
 		error ->
 		    ?INFO_MSG("(~s) Domain ~s is unconfigured for "
 			      "external component from ~s",
-			      [SockMod:pp(Socket), RemoteServer,
+			      [xmpp_socket:pp(Socket), RemoteServer,
 			       ejabberd_config:may_hide_data(misc:ip_to_list(IP))]),
 		    {false, undefined}
 	    end
@@ -153,11 +152,10 @@ get_password_fun(#{remote_server := RemoteServer,
 
 handle_auth_success(_, Mech, _,
 		    #{remote_server := RemoteServer, host_opts := HostOpts,
-		      socket := Socket, sockmod := SockMod,
-		      ip := IP} = State) ->
+		      socket := Socket, ip := IP} = State) ->
     ?INFO_MSG("(~s) Accepted external component ~s authentication "
 	      "for ~s from ~s",
-	      [SockMod:pp(Socket), Mech, RemoteServer,
+	      [xmpp_socket:pp(Socket), Mech, RemoteServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP))]),
     		    lists:foreach(
     		      fun (H) ->
@@ -168,11 +166,10 @@ handle_auth_success(_, Mech, _,
 
 handle_auth_failure(_, Mech, Reason,
 		    #{remote_server := RemoteServer,
-		      sockmod := SockMod,
 		      socket := Socket, ip := IP} = State) ->
     ?INFO_MSG("(~s) Failed external component ~s authentication "
 	      "for ~s from ~s: ~s",
-	      [SockMod:pp(Socket), Mech, RemoteServer,
+	      [xmpp_socket:pp(Socket), Mech, RemoteServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP)),
 	       Reason]),
     State.
@@ -199,7 +196,7 @@ handle_info({route, Packet}, #{access := Access} = State) ->
 	    xmpp_stream_in:send(State, Packet);
 	deny ->
 	    Lang = xmpp:get_lang(Packet),
-	    Err = xmpp:err_not_allowed(<<"Denied by ACL">>, Lang),
+	    Err = xmpp:err_not_allowed(<<"Access denied by service policy">>, Lang),
 	    ejabberd_router:route_error(Packet, Err),
 	    State
     end;

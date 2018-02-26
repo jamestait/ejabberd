@@ -5,7 +5,7 @@
 %%% Created : 29 May 2007 by Badlop <badlop@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -44,7 +44,7 @@
 
 -include("ejabberd.hrl").
 -include("logger.hrl").
-
+-include("translate.hrl").
 -include("xmpp.hrl").
 
 -record(state,
@@ -240,7 +240,7 @@ handle_iq(Packet, State) ->
 	end
     catch _:{xmpp_codec, Why} ->
 	    Lang = xmpp:get_lang(Packet),
-	    Err = xmpp:err_bad_request(xmpp:format_error(Why), Lang),
+	    Err = xmpp:err_bad_request(xmpp:io_format_error(Why), Lang),
 	    ejabberd_router:route_error(Packet, Err)
     end.
 
@@ -261,10 +261,12 @@ process_iq(_, _) ->
 -define(FEATURE(Feat), Feat).
 
 iq_disco_info(From, Lang, State) ->
+    Name = gen_mod:get_module_opt(State#state.lserver, ?MODULE,
+				  name, ?T("Multicast")),
     #disco_info{
        identities = [#identity{category = <<"service">>,
 			       type = <<"multicast">>,
-			       name = translate:translate(Lang, <<"Multicast">>)}],
+			       name = translate:translate(Lang, Name)}],
        features = [?NS_DISCO_INFO, ?NS_DISCO_ITEMS, ?NS_VCARD, ?NS_ADDRESS],
        xdata = iq_disco_info_extras(From, State)}.
 
@@ -402,7 +404,7 @@ strip_addresses_element(Packet) ->
 	#addresses{list = Addrs} ->
 	    PacketStripped = xmpp:remove_subtag(Packet, #addresses{}),
 	    {ok, PacketStripped, Addrs};
-	undefined ->
+	false ->
 	    throw(eadsele)
     end.
 
@@ -1119,6 +1121,7 @@ depends(_Host, _Opts) ->
 mod_opt_type(access) ->
     fun acl:access_rules_validator/1;
 mod_opt_type(host) -> fun iolist_to_binary/1;
+mod_opt_type(name) -> fun iolist_to_binary/1;
 mod_opt_type({limits, Type}) when (Type == local) or (Type == remote) ->
     fun(L) ->
 	    lists:map(
@@ -1128,4 +1131,4 @@ mod_opt_type({limits, Type}) when (Type == local) or (Type == remote) ->
 		    ({presence, I} = O) when is_integer(I) -> O
 		end, L)
     end;
-mod_opt_type(_) -> [access, host, {limits, local}, {limits, remote}].
+mod_opt_type(_) -> [access, host, {limits, local}, {limits, remote}, name].

@@ -2,7 +2,7 @@
 %%% Created : 11 Dec 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -61,11 +61,16 @@ mod_opt_type(_) ->
       c2s_state() | {stop, c2s_state()}.
 c2s_unauthenticated_packet(State, #iq{type = T, sub_els = [_]} = IQ)
   when T == get; T == set ->
-    case xmpp:get_subtag(IQ, #legacy_auth{}) of
+    try xmpp:try_subtag(IQ, #legacy_auth{}) of
 	#legacy_auth{} = Auth ->
 	    {stop, authenticate(State, xmpp:set_els(IQ, [Auth]))};
 	false ->
 	    State
+    catch _:{xmpp_codec, Why} ->
+	    Txt = xmpp:io_format_error(Why),
+	    Lang = maps:get(lang, State),
+	    Err = xmpp:make_error(IQ, xmpp:err_bad_request(Txt, Lang)),
+	    {stop, ejabberd_c2s:send(State, Err)}
     end;
 c2s_unauthenticated_packet(State, _) ->
     State.
@@ -133,7 +138,7 @@ authenticate(#{stream_id := StreamID, server := Server,
 	    Err = xmpp:make_error(IQ, xmpp:err_jid_malformed()),
 	    process_auth_failure(State, U, Err, 'jid-malformed');
 	false ->
-	    Txt = <<"Denied by ACL">>,
+	    Txt = <<"Access denied by service policy">>,
 	    Err = xmpp:make_error(IQ, xmpp:err_forbidden(Txt, Lang)),
 	    process_auth_failure(State, U, Err, 'forbidden')
     end.

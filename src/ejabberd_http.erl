@@ -5,7 +5,7 @@
 %%% Created : 27 Feb 2004 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -97,8 +97,7 @@ start_link(SockData, Opts) ->
 
 init({SockMod, Socket}, Opts) ->
     TLSEnabled = proplists:get_bool(tls, Opts),
-    TLSOpts1 = lists:filter(fun ({certfile, _}) -> true;
-				({ciphers, _}) -> true;
+    TLSOpts1 = lists:filter(fun ({ciphers, _}) -> true;
 				({dhfile, _}) -> true;
 				({protocol_options, _}) -> true;
 				(_) -> false
@@ -108,7 +107,11 @@ init({SockMod, Socket}, Opts) ->
                    false -> [compression_none | TLSOpts1];
                    true -> TLSOpts1
                end,
-    TLSOpts = [verify_none | TLSOpts2],
+    TLSOpts3 = case get_certfile(Opts) of
+		   undefined -> TLSOpts2;
+		   CertFile -> [{certfile, CertFile}|TLSOpts2]
+	       end,
+    TLSOpts = [verify_none | TLSOpts3],
     {SockMod1, Socket1} = if TLSEnabled ->
 				 inet:setopts(Socket, [{recbuf, 8192}]),
 				 {ok, TLSSocket} = fast_tls:tcp_to_tls(Socket,
@@ -146,7 +149,6 @@ init({SockMod, Socket}, Opts) ->
 
     CustomHeaders = proplists:get_value(custom_headers, Opts, []),
 
-    ?INFO_MSG("started: ~p", [{SockMod1, Socket1}]),
     State = #state{sockmod = SockMod1,
                    socket = Socket1,
                    default_host = DefaultHost,
@@ -266,10 +268,11 @@ process_header(State, Data) ->
 			  add_header(Name, Value, State)};
       {ok, http_eoh}
 	  when State#state.request_host == undefined ->
-	  ?WARNING_MSG("An HTTP request without 'Host' HTTP "
-		       "header was received.",
-		       []),
-	  throw(http_request_no_host_header);
+	    ?DEBUG("An HTTP request without 'Host' HTTP "
+		   "header was received.", []),
+	    {State1, Out} = process_request(State),
+	    send_text(State1, Out),
+	    process_header(State, {ok, {http_error, <<>>}});
       {ok, http_eoh} ->
 	  ?DEBUG("(~w) http query: ~w ~p~n",
 		 [State#state.socket, State#state.request_method,
@@ -418,6 +421,10 @@ extract_path_query(#state{request_method = Method,
 extract_path_query(State) ->
     {State, false}.
 
+process_request(#state{request_host = undefined,
+		       custom_headers = CustomHeaders} = State) ->
+    {State, make_text_output(State, 400, CustomHeaders,
+			     <<"Missing Host header">>)};
 process_request(#state{request_method = Method,
 		       request_auth = Auth,
 		       request_lang = Lang,
@@ -460,7 +467,9 @@ process_request(#state{request_method = Method,
 			       opts = Options,
                                headers = RequestHeaders,
                                ip = IP},
-	    Res = case process(RequestHandlers, Request, Socket, SockMod, Trail) of
+	    RequestHandlers1 = ejabberd_hooks:run_fold(
+				http_request_handlers, RequestHandlers, [Host, Request]),
+	    Res = case process(RequestHandlers1, Request, Socket, SockMod, Trail) of
 		      El when is_record(El, xmlel) ->
 			  make_xhtml_output(State, 200, CustomHeaders, El);
 		      {Status, Headers, El}
@@ -879,6 +888,20 @@ normalize_path([_Parent, <<"..">>|Path], Norm) ->
 normalize_path([Part | Path], Norm) ->
     normalize_path(Path, [Part|Norm]).
 
+-spec get_certfile([proplists:property()]) -> binary() | undefined.
+get_certfile(Opts) ->
+    case lists:keyfind(certfile, 1, Opts) of
+	{_, CertFile} ->
+	    CertFile;
+	false ->
+	    case ejabberd_pkix:get_certfile(?MYNAME) of
+		{ok, CertFile} ->
+		    CertFile;
+		error ->
+		    ejabberd_config:get_option({domain_certfile, ?MYNAME})
+	    end
+    end.
+
 transform_listen_option(captcha, Opts) ->
     [{captcha, true}|Opts];
 transform_listen_option(register, Opts) ->
@@ -927,8 +950,10 @@ opt_type(_) -> [trusted_proxies].
 		     (atom()) -> [atom()].
 listen_opt_type(tls) ->
     fun(B) when is_boolean(B) -> B end;
-listen_opt_type(certfile) ->
+listen_opt_type(certfile = Opt) ->
     fun(S) ->
+	    ?WARNING_MSG("Listening option '~s' for ~s is deprecated, use "
+			 "'certfiles' global option instead", [Opt, ?MODULE]),
 	    ejabberd_pkix:add_certfile(S),
 	    iolist_to_binary(S)
     end;

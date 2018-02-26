@@ -5,7 +5,7 @@
 %%% Created : 24 Nov 2002 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -137,10 +137,17 @@ route(To, Term) ->
 
 -spec route(stanza()) -> ok.
 route(Packet) ->
-    try do_route(Packet), ok
-    catch E:R ->
-            ?ERROR_MSG("failed to route packet:~n~s~nReason = ~p",
-                       [xmpp:pp(Packet), {E, {R, erlang:get_stacktrace()}}])
+    #jid{lserver = LServer} = xmpp:get_to(Packet),
+    case ejabberd_hooks:run_fold(sm_receive_packet, LServer, Packet, []) of
+	drop ->
+	    ?DEBUG("hook dropped stanza:~n~s", [xmpp:pp(Packet)]);
+	Packet1 ->
+	    try do_route(Packet1), ok
+	    catch E:R ->
+		    ?ERROR_MSG("failed to route packet:~n~s~nReason = ~p",
+			       [xmpp:pp(Packet1),
+				{E, {R, erlang:get_stacktrace()}}])
+	    end
     end.
 
 -spec open_session(sid(), binary(), binary(), binary(), prio(), info()) -> ok.
@@ -307,8 +314,11 @@ get_session_sid(User, Server, Resource) ->
     LResource = jid:resourceprep(Resource),
     Mod = get_sm_backend(LServer),
     case online(get_sessions(Mod, LUser, LServer, LResource)) of
-	[#session{sid = SID}] -> SID;
-	_ -> none
+	[] ->
+	    none;
+	Ss ->
+	    #session{sid = SID} = lists:max(Ss),
+	    SID
     end.
 
 -spec get_session_sids(binary(), binary()) -> [sid()].

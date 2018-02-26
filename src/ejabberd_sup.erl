@@ -5,7 +5,7 @@
 %%% Created : 31 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -47,13 +47,6 @@ init([]) ->
 	       5000,
 	       worker,
 	       [ejabberd_cluster]},
-    SystemMonitor =
-	{ejabberd_system_monitor,
-	 {ejabberd_system_monitor, start_link, []},
-	 permanent,
-	 brutal_kill,
-	 worker,
-	 [ejabberd_system_monitor]},
     S2S =
 	{ejabberd_s2s,
 	 {ejabberd_s2s, start_link, []},
@@ -156,6 +149,10 @@ init([]) ->
 	       permanent, 5000, worker, [cyrsasl]},
     PKIX = {ejabberd_pkix, {ejabberd_pkix, start_link, []},
 	    permanent, 5000, worker, [ejabberd_pkix]},
+    ACME = {ejabberd_acme, {ejabberd_acme, start_link, []},
+	    permanent, 5000, worker, [ejabberd_acme]},
+    IQ = {ejabberd_iq, {ejabberd_iq, start_link, []},
+	  permanent, 5000, worker, [ejabberd_iq]},
     {ok, {{one_for_one, 10, 1},
 	  [Hooks,
 	   Cluster,
@@ -166,8 +163,8 @@ init([]) ->
 	   Commands,
 	   Admin,
 	   PKIX,
+	   ACME,
 	   Listener,
-	   SystemMonitor,
 	   S2S,
 	   Captcha,
 	   S2SInSupervisor,
@@ -180,6 +177,7 @@ init([]) ->
 	   SQLSupervisor,
 	   RiakSupervisor,
 	   RedisSupervisor,
+	   IQ,
 	   Router,
 	   RouterMulticast,
 	   Local,

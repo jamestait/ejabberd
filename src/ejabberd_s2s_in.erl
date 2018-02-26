@@ -2,7 +2,7 @@
 %%% Created : 12 Dec 2016 by Evgeny Khramtsov <ekhramtsov@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -21,9 +21,9 @@
 %%%-------------------------------------------------------------------
 -module(ejabberd_s2s_in).
 -behaviour(xmpp_stream_in).
--behaviour(ejabberd_socket).
+-behaviour(xmpp_socket).
 
-%% ejabberd_socket callbacks
+%% xmpp_socket callbacks
 -export([start/2, start_link/2, socket_type/0]).
 %% ejabberd_listener callbacks
 -export([listen_opt_type/1]).
@@ -180,31 +180,29 @@ handle_stream_established(State) ->
     set_idle_timeout(State#{established => true}).
 
 handle_auth_success(RServer, Mech, _AuthModule,
-		    #{sockmod := SockMod,
-		      socket := Socket, ip := IP,
+		    #{socket := Socket, ip := IP,
 		      auth_domains := AuthDomains,
 		      server_host := ServerHost,
 		      lserver := LServer} = State) ->
     ?INFO_MSG("(~s) Accepted inbound s2s ~s authentication ~s -> ~s (~s)",
-	      [SockMod:pp(Socket), Mech, RServer, LServer,
+	      [xmpp_socket:pp(Socket), Mech, RServer, LServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP))]),
     State1 = case ejabberd_s2s:allow_host(ServerHost, RServer) of
 		 true ->
 		     AuthDomains1 = sets:add_element(RServer, AuthDomains),
-		     change_shaper(State, RServer),
-		     State#{auth_domains => AuthDomains1};
+		     State0 = change_shaper(State, RServer),
+		     State0#{auth_domains => AuthDomains1};
 		 false ->
 		     State
 	   end,
     ejabberd_hooks:run_fold(s2s_in_auth_result, ServerHost, State1, [true, RServer]).
 
 handle_auth_failure(RServer, Mech, Reason,
-		    #{sockmod := SockMod,
-		      socket := Socket, ip := IP,
+		    #{socket := Socket, ip := IP,
 		      server_host := ServerHost,
 		      lserver := LServer} = State) ->
     ?INFO_MSG("(~s) Failed inbound s2s ~s authentication ~s -> ~s (~s): ~s",
-	      [SockMod:pp(Socket), Mech, RServer, LServer,
+	      [xmpp_socket:pp(Socket), Mech, RServer, LServer,
 	       ejabberd_config:may_hide_data(misc:ip_to_list(IP)), Reason]),
     ejabberd_hooks:run_fold(s2s_in_auth_result,
 			    ServerHost, State, [false, RServer]).
@@ -286,11 +284,11 @@ handle_info(Info, #{server_host := LServer} = State) ->
     ejabberd_hooks:run_fold(s2s_in_handle_info, LServer, State, [Info]).
 
 terminate(Reason, #{auth_domains := AuthDomains,
-		    sockmod := SockMod, socket := Socket} = State) ->
+		    socket := Socket} = State) ->
     case maps:get(stop_reason, State, undefined) of
 	{tls, _} = Err ->
-	    ?ERROR_MSG("(~s) Failed to secure inbound s2s connection: ~s",
-		       [SockMod:pp(Socket), xmpp_stream_in:format_error(Err)]);
+	    ?WARNING_MSG("(~s) Failed to secure inbound s2s connection: ~s",
+			 [xmpp_socket:pp(Socket), xmpp_stream_in:format_error(Err)]);
 	_ ->
 	    ok
     end,
@@ -340,7 +338,7 @@ set_idle_timeout(#{server_host := LServer,
 set_idle_timeout(State) ->
     State.
 
--spec change_shaper(state(), binary()) -> ok.
+-spec change_shaper(state(), binary()) -> state().
 change_shaper(#{shaper := ShaperName, server_host := ServerHost} = State,
 	      RServer) ->
     Shaper = acl:match_rule(ServerHost, ShaperName, jid:make(RServer)),
@@ -359,8 +357,10 @@ change_shaper(#{shaper := ShaperName, server_host := ServerHost} = State,
 		     (max_fsm_queue) -> fun((pos_integer()) -> pos_integer());
 		     (atom()) -> [atom()].
 listen_opt_type(shaper) -> fun acl:shaper_rules_validator/1;
-listen_opt_type(certfile) ->
+listen_opt_type(certfile = Opt) ->
     fun(S) ->
+	    ?WARNING_MSG("Listening option '~s' for ~s is deprecated, use "
+			 "'certfiles' global option instead", [Opt, ?MODULE]),
 	    ejabberd_pkix:add_certfile(S),
 	    iolist_to_binary(S)
     end;

@@ -5,7 +5,7 @@
 %%% Created : 24 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -526,11 +526,19 @@ validate_opts(Host, Module, Opts, Validators) when is_list(Opts) ->
 			      end
 		      end;
 		  false ->
-		      ?ERROR_MSG("unknown option '~s' for module '~s' will be"
-				 " likely ignored, available options are: ~s",
-				 [Opt, Module,
-				  misc:join_atoms([K || {K, _} <- Validators],
-						  <<", ">>)]),
+		      case Validators of
+			  [] ->
+			      ?ERROR_MSG("unknown option '~s' for module '~s' "
+					 "will be likely ignored because the "
+					 "module doesn't have any options",
+					 [Opt, Module]);
+			  _ ->
+			      ?ERROR_MSG("unknown option '~s' for module '~s' will be"
+					 " likely ignored, available options are: ~s",
+					 [Opt, Module,
+					  misc:join_atoms([K || {K, _} <- Validators],
+							  <<", ">>)])
+		      end,
 		      [{Opt, Val}]
 	      end;
 	 (_) ->

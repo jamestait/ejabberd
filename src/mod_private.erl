@@ -5,7 +5,7 @@
 %%% Created : 16 Jan 2003 by Alexey Shchepin <alexey@process-one.net>
 %%%
 %%%
-%%% ejabberd, Copyright (C) 2002-2017   ProcessOne
+%%% ejabberd, Copyright (C) 2002-2018   ProcessOne
 %%%
 %%% This program is free software; you can redistribute it and/or
 %%% modify it under the terms of the GNU General Public License as
@@ -133,7 +133,7 @@ set_data(LUser, LServer, Data) ->
     Mod = gen_mod:db_mod(LServer, ?MODULE),
     case Mod:set_data(LUser, LServer, Data) of
 	ok ->
-	    delete_cache(Mod, LServer, LServer, Data);
+	    delete_cache(Mod, LUser, LServer, Data);
 	{error, _} = Err ->
 	    Err
     end.
